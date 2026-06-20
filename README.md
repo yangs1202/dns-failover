@@ -9,7 +9,28 @@ The intended design is:
 3. A healthy endpoint must return `200 OK`.
 4. Agents write observations to `etcd`.
 5. Only the `etcd` leader with quorum may decide failover.
-6. The leader updates Cloudflare DNS to point at the selected active VIP.
+6. The leader updates the active Cloudflare CNAME to point at the selected regional DNS name.
+
+## DNS model
+
+Regional public IPs are registered ahead of time as stable DNS records.
+
+```text
+service.example.invalid
+└── CNAME vip.example.invalid
+    └── CNAME region-a.example.invalid
+        └── A pre-registered regional public IP
+```
+
+Failover changes only the active CNAME target:
+
+```text
+vip.example.invalid -> region-a.example.invalid
+vip.example.invalid -> region-b.example.invalid
+vip.example.invalid -> region-c.example.invalid
+```
+
+The public repository uses `.invalid` examples only. Production domains, IPs, and region names must stay outside git.
 
 ## Security posture
 
@@ -25,11 +46,13 @@ This repository is public and must not contain private infrastructure details.
 ```sh
 GSLB_REGION_ID=region-a
 GSLB_REGION_ENDPOINTS=region-a=https://example-a.invalid/healthz,region-b=https://example-b.invalid/healthz,region-c=https://example-c.invalid/healthz
+GSLB_REGION_DNS_TARGETS=region-a=region-a.example.invalid,region-b=region-b.example.invalid,region-c=region-c.example.invalid
 GSLB_HEALTH_TIMEOUT=2s
 CLOUDFLARE_API_TOKEN=...
 CLOUDFLARE_ZONE_ID=...
 CLOUDFLARE_RECORD_ID=...
-CLOUDFLARE_RECORD_NAME=service.example.com
+CLOUDFLARE_RECORD_NAME=vip.example.invalid
+CLOUDFLARE_RECORD_TYPE=CNAME
 ```
 
 ## Current status

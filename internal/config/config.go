@@ -11,6 +11,7 @@ import (
 type Config struct {
 	RegionID      string
 	Endpoints     []Endpoint
+	DNSTargets    []DNSTarget
 	HealthTimeout time.Duration
 	Cloudflare    CloudflareConfig
 }
@@ -20,11 +21,17 @@ type Endpoint struct {
 	URL      string
 }
 
+type DNSTarget struct {
+	RegionID string
+	Name     string
+}
+
 type CloudflareConfig struct {
 	APIToken   string
 	ZoneID     string
 	RecordID   string
 	RecordName string
+	RecordType string
 }
 
 func LoadFromEnv() (Config, error) {
@@ -36,7 +43,11 @@ func LoadFromEnv() (Config, error) {
 			ZoneID:     os.Getenv("CLOUDFLARE_ZONE_ID"),
 			RecordID:   os.Getenv("CLOUDFLARE_RECORD_ID"),
 			RecordName: os.Getenv("CLOUDFLARE_RECORD_NAME"),
+			RecordType: strings.TrimSpace(os.Getenv("CLOUDFLARE_RECORD_TYPE")),
 		},
+	}
+	if cfg.Cloudflare.RecordType == "" {
+		cfg.Cloudflare.RecordType = "CNAME"
 	}
 
 	if cfg.RegionID == "" {
@@ -59,6 +70,15 @@ func LoadFromEnv() (Config, error) {
 		return Config{}, err
 	}
 	cfg.Endpoints = endpoints
+
+	dnsTargets, err := parseDNSTargets(os.Getenv("GSLB_REGION_DNS_TARGETS"))
+	if err != nil {
+		return Config{}, err
+	}
+	if err := validateRegionSets(endpoints, dnsTargets); err != nil {
+		return Config{}, err
+	}
+	cfg.DNSTargets = dnsTargets
 
 	return cfg, nil
 }
@@ -107,4 +127,62 @@ func parseEndpoints(raw string) ([]Endpoint, error) {
 	}
 
 	return endpoints, nil
+}
+
+func parseDNSTargets(raw string) ([]DNSTarget, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, fmt.Errorf("GSLB_REGION_DNS_TARGETS is required")
+	}
+
+	parts := strings.Split(raw, ",")
+	targets := make([]DNSTarget, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+
+	for _, part := range parts {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok {
+			return nil, fmt.Errorf("dns target %q must use region_id=dns_name format", part)
+		}
+
+		regionID := strings.TrimSpace(key)
+		name := strings.TrimSuffix(strings.TrimSpace(value), ".")
+		if regionID == "" || name == "" {
+			return nil, fmt.Errorf("dns target %q has empty region_id or dns_name", part)
+		}
+		if strings.ContainsAny(name, "/:") {
+			return nil, fmt.Errorf("dns target %q must be a DNS name, not a URL", regionID)
+		}
+		if _, exists := seen[regionID]; exists {
+			return nil, fmt.Errorf("duplicate dns target region_id %q", regionID)
+		}
+
+		seen[regionID] = struct{}{}
+		targets = append(targets, DNSTarget{
+			RegionID: regionID,
+			Name:     name,
+		})
+	}
+
+	return targets, nil
+}
+
+func validateRegionSets(endpoints []Endpoint, targets []DNSTarget) error {
+	endpointRegions := make(map[string]struct{}, len(endpoints))
+	for _, endpoint := range endpoints {
+		endpointRegions[endpoint.RegionID] = struct{}{}
+	}
+
+	for _, target := range targets {
+		if _, ok := endpointRegions[target.RegionID]; !ok {
+			return fmt.Errorf("dns target %q has no matching health endpoint", target.RegionID)
+		}
+		delete(endpointRegions, target.RegionID)
+	}
+
+	for regionID := range endpointRegions {
+		return fmt.Errorf("health endpoint %q has no matching dns target", regionID)
+	}
+
+	return nil
 }
