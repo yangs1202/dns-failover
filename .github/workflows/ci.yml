@@ -85,7 +85,7 @@ jobs:
 
       - name: Commit coverage badge
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: 커버리지 배지 갱신
           file_pattern: coverage/coverage.svg
