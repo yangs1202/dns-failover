@@ -38,3 +38,24 @@ func TestRegistryRejectsUnsupportedProvider(t *testing.T) {
 		t.Fatal("expected unsupported provider error")
 	}
 }
+
+func TestRegistryRejectsDuplicateAndEmptyProvider(t *testing.T) {
+	t.Parallel()
+
+	registry := NewRegistry()
+	if err := registry.Register("", func(Config) (Provider, error) {
+		return fakeProvider{}, nil
+	}); err == nil {
+		t.Fatal("expected empty provider name error")
+	}
+	if err := registry.Register("fake", func(Config) (Provider, error) {
+		return fakeProvider{}, nil
+	}); err != nil {
+		t.Fatalf("Register returned error: %v", err)
+	}
+	if err := registry.Register("fake", func(Config) (Provider, error) {
+		return fakeProvider{}, nil
+	}); err == nil {
+		t.Fatal("expected duplicate provider error")
+	}
+}

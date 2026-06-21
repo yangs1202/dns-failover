@@ -44,13 +44,19 @@ jobs:
             echo "- Coverage: \`${total}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Enforce coverage threshold
+        run: |
+          total="${{ steps.coverage.outputs.total }}"
+          value="${total%%%}"
+          awk "BEGIN { exit !($value >= 90) }"
+
       - name: Generate coverage badge
         run: |
           total="${{ steps.coverage.outputs.total }}"
           value="${total%%%}"
           color="#e05d44"
-          awk "BEGIN { exit !($value >= 80) }" && color="#4c1" || true
-          awk "BEGIN { exit !($value >= 60 && $value < 80) }" && color="#dfb317" || true
+          awk "BEGIN { exit !($value >= 90) }" && color="#4c1" || true
+          awk "BEGIN { exit !($value >= 75 && $value < 90) }" && color="#dfb317" || true
           cat > coverage/coverage.svg <<EOF
           <svg xmlns="http://www.w3.org/2000/svg" width="112" height="20" role="img" aria-label="coverage: ${total}">
             <title>coverage: ${total}</title>

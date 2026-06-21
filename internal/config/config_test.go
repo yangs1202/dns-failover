@@ -36,6 +36,24 @@ func TestParseEndpointsRejectsUnsupportedScheme(t *testing.T) {
 	}
 }
 
+func TestParseEndpointsRejectsMalformedEntries(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{
+		"",
+		"region-a",
+		"=https://example-a.invalid/healthz",
+		"region-a=",
+		"region-a=%zz",
+		"region-a=https:///healthz",
+	}
+	for _, raw := range tests {
+		if _, err := parseEndpoints(raw); err == nil {
+			t.Fatalf("expected parseEndpoints error for %q", raw)
+		}
+	}
+}
+
 func TestParseDNSTargets(t *testing.T) {
 	t.Parallel()
 
@@ -61,6 +79,23 @@ func TestParseDNSTargetsRejectsURLs(t *testing.T) {
 	}
 }
 
+func TestParseDNSTargetsRejectsMalformedEntries(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{
+		"",
+		"region-a",
+		"=region-a.example.invalid",
+		"region-a=",
+		"region-a=region-a.example.invalid,region-a=region-b.example.invalid",
+	}
+	for _, raw := range tests {
+		if _, err := parseDNSTargets(raw); err == nil {
+			t.Fatalf("expected parseDNSTargets error for %q", raw)
+		}
+	}
+}
+
 func TestValidateRegionSetsRequiresMatchingRegions(t *testing.T) {
 	t.Parallel()
 
@@ -70,6 +105,21 @@ func TestValidateRegionSetsRequiresMatchingRegions(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected mismatched region error")
+	}
+}
+
+func TestValidateRegionSetsRequiresTargetsForAllEndpoints(t *testing.T) {
+	t.Parallel()
+
+	err := validateRegionSets(
+		[]Endpoint{
+			{RegionID: "region-a", URL: "https://example-a.invalid/healthz"},
+			{RegionID: "region-b", URL: "https://example-b.invalid/healthz"},
+		},
+		[]DNSTarget{{RegionID: "region-a", Name: "region-a.example.invalid"}},
+	)
+	if err == nil {
+		t.Fatal("expected missing DNS target error")
 	}
 }
 
@@ -89,6 +139,21 @@ func TestParseRegionPriority(t *testing.T) {
 	}
 }
 
+func TestParseRegionPriorityRejectsMalformedEntries(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{
+		"",
+		"region-a,,region-b",
+		"region-a,region-a",
+	}
+	for _, raw := range tests {
+		if _, err := parseRegionPriority(raw); err == nil {
+			t.Fatalf("expected parseRegionPriority error for %q", raw)
+		}
+	}
+}
+
 func TestValidateRegionPriorityRequiresAllRegions(t *testing.T) {
 	t.Parallel()
 
@@ -101,6 +166,21 @@ func TestValidateRegionPriorityRequiresAllRegions(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected missing priority region error")
+	}
+}
+
+func TestValidateRegionPriorityRejectsUnknownRegion(t *testing.T) {
+	t.Parallel()
+
+	err := validateRegionPriority(
+		[]string{"region-a", "region-c"},
+		[]Endpoint{
+			{RegionID: "region-a", URL: "https://example-a.invalid/healthz"},
+			{RegionID: "region-b", URL: "https://example-b.invalid/healthz"},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected unknown priority region error")
 	}
 }
 
@@ -117,6 +197,21 @@ func TestParseDNSNames(t *testing.T) {
 	}
 	if names[0] != "app.example.invalid" {
 		t.Fatalf("expected trailing dot to be trimmed, got %q", names[0])
+	}
+}
+
+func TestParseDNSNamesRejectsInvalidValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{
+		"app.example.invalid,,api.example.invalid",
+		"https://app.example.invalid",
+		"app.example.invalid,app.example.invalid.",
+	}
+	for _, raw := range tests {
+		if _, err := parseDNSNames(raw, "TEST_DNS_NAMES"); err == nil {
+			t.Fatalf("expected parseDNSNames error for %q", raw)
+		}
 	}
 }
 
@@ -244,6 +339,35 @@ func TestLoadFromEnvRejectsInvalidDNSTTL(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvRejectsInvalidDurationsAndLists(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+	}{
+		{name: "dns ttl parse", env: map[string]string{"DNS_FAILOVER_DNS_TTL": "bad"}},
+		{name: "health timeout parse", env: map[string]string{"DNS_FAILOVER_HEALTH_TIMEOUT": "bad"}},
+		{name: "health timeout positive", env: map[string]string{"DNS_FAILOVER_HEALTH_TIMEOUT": "0s"}},
+		{name: "check interval parse", env: map[string]string{"DNS_FAILOVER_CHECK_INTERVAL": "bad"}},
+		{name: "check interval positive", env: map[string]string{"DNS_FAILOVER_CHECK_INTERVAL": "0s"}},
+		{name: "etcd endpoint empty", env: map[string]string{"DNS_FAILOVER_ETCD_ENDPOINTS": "10.0.0.1:2379,"}},
+		{name: "service record invalid", env: map[string]string{"DNS_FAILOVER_SERVICE_RECORDS": "https://app.example.invalid"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setMinimalEnv(t)
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+
+			_, err := LoadFromEnv()
+			if err == nil {
+				t.Fatal("expected LoadFromEnv error")
+			}
+		})
+	}
+}
+
 func TestLoadFromEnvRejectsInvalidEtcdKeyPrefix(t *testing.T) {
 	t.Setenv("DNS_FAILOVER_REGION_ID", "region-a")
 	t.Setenv("DNS_FAILOVER_REGION_ENDPOINTS", "region-a=https://region-a.example.invalid/healthz")
@@ -265,4 +389,14 @@ func TestParseListRejectsDuplicates(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected duplicate list value error")
 	}
+}
+
+func setMinimalEnv(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("DNS_FAILOVER_REGION_ID", "region-a")
+	t.Setenv("DNS_FAILOVER_REGION_ENDPOINTS", "region-a=https://region-a.example.invalid/healthz")
+	t.Setenv("DNS_FAILOVER_REGION_DNS_TARGETS", "region-a=region-a.example.invalid")
+	t.Setenv("DNS_FAILOVER_REGION_PRIORITY", "region-a")
+	t.Setenv("DNS_FAILOVER_DNS_PROVIDER", "example")
 }

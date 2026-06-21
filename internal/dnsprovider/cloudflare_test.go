@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -74,5 +75,96 @@ func TestCloudflareProviderUpdatesCNAME(t *testing.T) {
 	}
 	if gotPayload.TTL != 1 {
 		t.Fatalf("expected ttl 1, got %d", gotPayload.TTL)
+	}
+}
+
+func TestNewCloudflareProviderRejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []Config{
+		{},
+		{APIToken: "token"},
+		{APIToken: "token", ZoneID: "zone-1"},
+		{APIToken: "token", ZoneID: "zone-1", RecordID: "record-1"},
+		{APIToken: "token", ZoneID: "zone-1", RecordID: "record-1", RecordName: "vip.example.invalid", RecordType: "A"},
+	}
+	for _, cfg := range tests {
+		if _, err := NewCloudflareProvider(cfg); err == nil {
+			t.Fatalf("expected config error for %+v", cfg)
+		}
+	}
+}
+
+func TestCloudflareProviderReturnsAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"success":false}`))
+	}))
+	defer server.Close()
+
+	provider := CloudflareProvider{
+		apiToken:   "token",
+		zoneID:     "zone-1",
+		recordID:   "record-1",
+		recordName: "vip.example.invalid",
+		recordType: "CNAME",
+		ttl:        60,
+		baseURL:    server.URL,
+		client:     server.Client(),
+	}
+	err := provider.UpdateCNAME(context.Background(), CNAMEChange{TargetName: "target.example.invalid"})
+	if err == nil {
+		t.Fatal("expected API error")
+	}
+	if !strings.Contains(err.Error(), "400") {
+		t.Fatalf("expected status code in error, got %v", err)
+	}
+}
+
+func TestCloudflareProviderReturnsDecodeAndUnsuccessfulErrors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "decode", body: `{`},
+		{name: "unsuccessful", body: `{"success":false,"errors":[{"code":1000,"message":"bad"}]}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			provider := CloudflareProvider{
+				apiToken:   "token",
+				zoneID:     "zone-1",
+				recordID:   "record-1",
+				recordName: "vip.example.invalid",
+				recordType: "CNAME",
+				ttl:        60,
+				baseURL:    server.URL,
+				client:     server.Client(),
+			}
+			err := provider.UpdateCNAME(context.Background(), CNAMEChange{TargetName: "target.example.invalid"})
+			if err == nil {
+				t.Fatal("expected response error")
+			}
+		})
+	}
+}
+
+func TestCloudflareProviderRejectsEmptyTarget(t *testing.T) {
+	t.Parallel()
+
+	provider := CloudflareProvider{recordType: "CNAME"}
+	err := provider.UpdateCNAME(context.Background(), CNAMEChange{TargetName: " "})
+	if err == nil {
+		t.Fatal("expected empty target error")
 	}
 }

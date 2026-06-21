@@ -47,3 +47,20 @@ func TestHTTPCheckerTreatsNon200AsUnhealthy(t *testing.T) {
 		t.Fatalf("expected 503 status, got %d", result.StatusCode)
 	}
 }
+
+func TestHTTPCheckerTreatsRequestErrorAsUnhealthy(t *testing.T) {
+	t.Parallel()
+
+	checker := NewHTTPChecker(time.Millisecond)
+	result := checker.Check(context.Background(), config.Endpoint{RegionID: "region-a", URL: ":// bad-url"})
+
+	if result.Healthy {
+		t.Fatal("expected unhealthy result")
+	}
+	if result.Err == nil {
+		t.Fatal("expected request error")
+	}
+	if result.RegionID != "region-a" {
+		t.Fatalf("expected region-a, got %q", result.RegionID)
+	}
+}

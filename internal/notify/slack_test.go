@@ -59,3 +59,64 @@ func TestNoopNotifierDoesNothing(t *testing.T) {
 		t.Fatalf("Notify returned error: %v", err)
 	}
 }
+
+func TestNewSlackNotifierRejectsEmptyURL(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewSlackNotifier(" ")
+	if err == nil {
+		t.Fatal("expected empty webhook error")
+	}
+}
+
+func TestSlackNotifierReturnsHTTPError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte("bad gateway"))
+	}))
+	defer server.Close()
+
+	notifier, err := NewSlackNotifier(server.URL)
+	if err != nil {
+		t.Fatalf("NewSlackNotifier returned error: %v", err)
+	}
+
+	err = notifier.Notify(context.Background(), Event{Title: "failed"})
+	if err == nil {
+		t.Fatal("expected webhook error")
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Fatalf("expected status code in error, got %v", err)
+	}
+}
+
+func TestFormatSlackTextIncludesOrderedAndCustomFields(t *testing.T) {
+	t.Parallel()
+
+	text := formatSlackText(Event{
+		Title: "title",
+		Fields: map[string]string{
+			"target_name": "target.example.invalid",
+			"custom":      "value",
+			"empty":       "",
+		},
+	})
+
+	if !strings.Contains(text, "target_name: target.example.invalid") {
+		t.Fatalf("expected ordered target_name field, got %q", text)
+	}
+	if !strings.Contains(text, "custom: value") {
+		t.Fatalf("expected custom field, got %q", text)
+	}
+	if strings.Contains(text, "empty") {
+		t.Fatalf("expected empty field to be skipped, got %q", text)
+	}
+	if !contains([]string{"a", "b"}, "b") {
+		t.Fatal("expected contains to find value")
+	}
+	if contains([]string{"a", "b"}, "c") {
+		t.Fatal("expected contains to miss value")
+	}
+}

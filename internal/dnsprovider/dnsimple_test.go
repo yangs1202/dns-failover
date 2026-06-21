@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -56,5 +57,83 @@ func TestDNSimpleProviderUpdatesCNAME(t *testing.T) {
 	}
 	if gotPayload.TTL != 30 {
 		t.Fatalf("expected ttl 30, got %d", gotPayload.TTL)
+	}
+}
+
+func TestNewDNSimpleProviderRejectsInvalidConfig(t *testing.T) {
+	t.Parallel()
+
+	tests := []Config{
+		{},
+		{APIToken: "token"},
+		{APIToken: "token", AccountID: "123"},
+		{APIToken: "token", AccountID: "123", ZoneID: "example.invalid"},
+		{APIToken: "token", AccountID: "123", ZoneID: "example.invalid", RecordID: "record-1", RecordType: "A"},
+	}
+	for _, cfg := range tests {
+		if _, err := NewDNSimpleProvider(cfg); err == nil {
+			t.Fatalf("expected config error for %+v", cfg)
+		}
+	}
+}
+
+func TestDNSimpleProviderAppliesChangeOverrides(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	provider := DNSimpleProvider{
+		apiToken:   "token",
+		accountID:  "123",
+		zoneName:   "example.invalid",
+		recordID:   "record-1",
+		recordType: "CNAME",
+		ttl:        60,
+		baseURL:    server.URL,
+		client:     server.Client(),
+	}
+	err := provider.UpdateCNAME(context.Background(), CNAMEChange{
+		ZoneID:     "override.invalid",
+		RecordID:   "record-2",
+		TargetName: "target.override.invalid",
+	})
+	if err != nil {
+		t.Fatalf("UpdateCNAME returned error: %v", err)
+	}
+	if gotPath != "/123/zones/override.invalid/records/record-2" {
+		t.Fatalf("unexpected path %q", gotPath)
+	}
+}
+
+func TestDNSimpleProviderReturnsAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("forbidden"))
+	}))
+	defer server.Close()
+
+	provider := DNSimpleProvider{
+		apiToken:   "token",
+		accountID:  "123",
+		zoneName:   "example.invalid",
+		recordID:   "record-1",
+		recordType: "CNAME",
+		ttl:        60,
+		baseURL:    server.URL,
+		client:     server.Client(),
+	}
+	err := provider.UpdateCNAME(context.Background(), CNAMEChange{TargetName: "target.example.invalid"})
+	if err == nil {
+		t.Fatal("expected API error")
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Fatalf("expected status code in error, got %v", err)
 	}
 }

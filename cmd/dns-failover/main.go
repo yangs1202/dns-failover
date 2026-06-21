@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -20,41 +21,76 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	cfg, err := config.LoadFromEnv()
-	if err != nil {
-		logger.Error("load config failed", "error", err)
-		os.Exit(1)
-	}
-	if len(cfg.Etcd.Endpoints) == 0 {
-		logger.Error("etcd endpoints are required for automatic failover")
-		os.Exit(1)
-	}
-
-	provider, err := newDNSProvider(cfg)
-	if err != nil {
-		logger.Error("create dns provider failed", "error", err)
-		os.Exit(1)
-	}
-	notifier, err := newNotifier(cfg)
-	if err != nil {
-		logger.Error("create notifier failed", "error", err)
-		os.Exit(1)
-	}
-
-	etcdClient, err := clientv3.New(clientv3.Config{
-		Endpoints:   cfg.Etcd.Endpoints,
-		DialTimeout: cfg.HealthTimeout,
-	})
-	if err != nil {
-		logger.Error("create etcd client failed", "error", err)
-		os.Exit(1)
-	}
-	defer etcdClient.Close()
-
-	checker := health.NewHTTPChecker(cfg.HealthTimeout)
-	store := failover.NewEtcdStore(etcdClient, cfg.Etcd.KeyPrefix, observationTTL(cfg))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	if err := run(ctx, logger); err != nil {
+		logger.Error("agent failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, logger *slog.Logger) error {
+	return runWithDependencies(ctx, logger, defaultAgentDependencies())
+}
+
+type agentDependencies struct {
+	loadConfig    func() (config.Config, error)
+	newProvider   func(config.Config) (dnsprovider.Provider, error)
+	newNotifier   func(config.Config) (notify.Notifier, error)
+	newEtcdClient func(config.Config) (*clientv3.Client, error)
+	newStore      func(*clientv3.Client, config.Config) failoverStore
+	newChecker    func(config.Config) healthChecker
+}
+
+func defaultAgentDependencies() agentDependencies {
+	return agentDependencies{
+		loadConfig:  config.LoadFromEnv,
+		newProvider: newDNSProvider,
+		newNotifier: newNotifier,
+		newEtcdClient: func(cfg config.Config) (*clientv3.Client, error) {
+			return clientv3.New(clientv3.Config{
+				Endpoints:   cfg.Etcd.Endpoints,
+				DialTimeout: cfg.HealthTimeout,
+			})
+		},
+		newStore: func(client *clientv3.Client, cfg config.Config) failoverStore {
+			return failover.NewEtcdStore(client, cfg.Etcd.KeyPrefix, observationTTL(cfg))
+		},
+		newChecker: func(cfg config.Config) healthChecker {
+			return health.NewHTTPChecker(cfg.HealthTimeout)
+		},
+	}
+}
+
+func runWithDependencies(ctx context.Context, logger *slog.Logger, deps agentDependencies) error {
+	cfg, err := deps.loadConfig()
+	if err != nil {
+		return err
+	}
+	if len(cfg.Etcd.Endpoints) == 0 {
+		return errors.New("etcd endpoints are required for automatic failover")
+	}
+
+	provider, err := deps.newProvider(cfg)
+	if err != nil {
+		return err
+	}
+	notifier, err := deps.newNotifier(cfg)
+	if err != nil {
+		return err
+	}
+
+	etcdClient, err := deps.newEtcdClient(cfg)
+	if err != nil {
+		return err
+	}
+	if etcdClient != nil {
+		defer etcdClient.Close()
+	}
+
+	checker := deps.newChecker(cfg)
+	store := deps.newStore(etcdClient, cfg)
 
 	logger.Info(
 		"agent started",
@@ -76,14 +112,26 @@ func main() {
 		select {
 		case <-ctx.Done():
 			logger.Info("agent stopped", "region", cfg.RegionID)
-			return
+			return nil
 		case <-ticker.C:
 			runFailoverCycle(ctx, logger, checker, store, provider, notifier, cfg)
 		}
 	}
 }
 
-func runFailoverCycle(ctx context.Context, logger *slog.Logger, checker health.HTTPChecker, store failover.EtcdStore, provider dnsprovider.Provider, notifier notify.Notifier, cfg config.Config) {
+type healthChecker interface {
+	Check(context.Context, config.Endpoint) health.Result
+}
+
+type failoverStore interface {
+	PutObservation(context.Context, failover.Observation) error
+	Observations(context.Context) ([]failover.Observation, error)
+	ActiveDecision(context.Context) (failover.Decision, bool, error)
+	PutActiveDecision(context.Context, failover.Decision) error
+	WithLeadership(context.Context, time.Duration, func(context.Context) error) (bool, error)
+}
+
+func runFailoverCycle(ctx context.Context, logger *slog.Logger, checker healthChecker, store failoverStore, provider dnsprovider.Provider, notifier notify.Notifier, cfg config.Config) {
 	observations := runHealthCheckCycle(ctx, logger, checker, cfg)
 	for _, observation := range observations {
 		if err := store.PutObservation(ctx, observation); err != nil {
@@ -174,7 +222,7 @@ func runFailoverCycle(ctx context.Context, logger *slog.Logger, checker health.H
 	}
 }
 
-func runHealthCheckCycle(ctx context.Context, logger *slog.Logger, checker health.HTTPChecker, cfg config.Config) []failover.Observation {
+func runHealthCheckCycle(ctx context.Context, logger *slog.Logger, checker healthChecker, cfg config.Config) []failover.Observation {
 	cycleCtx, cancel := context.WithTimeout(ctx, cfg.HealthTimeout*time.Duration(len(cfg.Endpoints)))
 	defer cancel()
 
