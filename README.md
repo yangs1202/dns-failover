@@ -17,8 +17,8 @@ Minimal DNS failover agent for three-region deployments.
 - DNS provider abstraction so Cloudflare or another provider can be plugged in.
 - External `etcd` endpoint configuration for sharing an existing quorum cluster.
 - Long-running agent process suitable for container deployments.
-- Planned `etcd` quorum and leader election to avoid split brain.
-- Planned DNS provider clients.
+- `etcd` lock-based leader coordination to avoid split brain.
+- Cloudflare DNS provider client.
 
 ## Design
 
@@ -26,7 +26,7 @@ Minimal DNS failover agent for three-region deployments.
 2. Agents perform HTTP health checks against every regional endpoint.
 3. A healthy endpoint must return `200 OK`.
 4. Agents write observations to `etcd`.
-5. Only the `etcd` leader with quorum may decide failover.
+5. Only the agent that obtains the `etcd` lock may decide failover.
 6. The leader updates the active provider-managed CNAME to point at the selected regional DNS name.
 
 ## DNS model
@@ -95,19 +95,16 @@ DNS_FAILOVER_DNS_RECORD_TYPE=CNAME
 
 ## Current status
 
-Initial scaffold only:
+Current status:
 
 - ENV-based configuration
 - HTTP `200 OK` health checker
 - long-running agent entrypoint that prints regional health observations
 - external `etcd` endpoint and key-prefix configuration
-
-Planned next steps:
-
-- `etcd` observation storage using the configured endpoints and prefix
-- `etcd` lease-based leader election
-- quorum-gated failover decision
-- DNS provider update clients
+- `etcd` TTL-backed observation storage
+- `etcd` lock-based leader coordination
+- quorum-gated failover decision from current observations
+- Cloudflare CNAME update client
 
 ## Development
 
@@ -123,5 +120,5 @@ CI runs formatting checks, race-enabled tests, and coverage reporting on every p
 Version tags that match `v*` publish a container image to GHCR:
 
 ```text
-ghcr.io/yangs1202/dns-failover:v0.1.0
+ghcr.io/yangs1202/dns-failover:v0.2.0
 ```
