@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/yangs1202/dns-gslb-failover/internal/config"
+	"github.com/yangs1202/dns-failover/internal/config"
 )
 
 type Result struct {

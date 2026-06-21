@@ -36,7 +36,7 @@ type CloudflareConfig struct {
 
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
-		RegionID:      strings.TrimSpace(os.Getenv("GSLB_REGION_ID")),
+		RegionID:      strings.TrimSpace(os.Getenv("DNS_FAILOVER_REGION_ID")),
 		HealthTimeout: 2 * time.Second,
 		Cloudflare: CloudflareConfig{
 			APIToken:   os.Getenv("CLOUDFLARE_API_TOKEN"),
@@ -51,27 +51,27 @@ func LoadFromEnv() (Config, error) {
 	}
 
 	if cfg.RegionID == "" {
-		return Config{}, fmt.Errorf("GSLB_REGION_ID is required")
+		return Config{}, fmt.Errorf("DNS_FAILOVER_REGION_ID is required")
 	}
 
-	if timeoutText := strings.TrimSpace(os.Getenv("GSLB_HEALTH_TIMEOUT")); timeoutText != "" {
+	if timeoutText := strings.TrimSpace(os.Getenv("DNS_FAILOVER_HEALTH_TIMEOUT")); timeoutText != "" {
 		timeout, err := time.ParseDuration(timeoutText)
 		if err != nil {
-			return Config{}, fmt.Errorf("parse GSLB_HEALTH_TIMEOUT: %w", err)
+			return Config{}, fmt.Errorf("parse DNS_FAILOVER_HEALTH_TIMEOUT: %w", err)
 		}
 		if timeout <= 0 {
-			return Config{}, fmt.Errorf("GSLB_HEALTH_TIMEOUT must be positive")
+			return Config{}, fmt.Errorf("DNS_FAILOVER_HEALTH_TIMEOUT must be positive")
 		}
 		cfg.HealthTimeout = timeout
 	}
 
-	endpoints, err := parseEndpoints(os.Getenv("GSLB_REGION_ENDPOINTS"))
+	endpoints, err := parseEndpoints(os.Getenv("DNS_FAILOVER_REGION_ENDPOINTS"))
 	if err != nil {
 		return Config{}, err
 	}
 	cfg.Endpoints = endpoints
 
-	dnsTargets, err := parseDNSTargets(os.Getenv("GSLB_REGION_DNS_TARGETS"))
+	dnsTargets, err := parseDNSTargets(os.Getenv("DNS_FAILOVER_REGION_DNS_TARGETS"))
 	if err != nil {
 		return Config{}, err
 	}
@@ -86,7 +86,7 @@ func LoadFromEnv() (Config, error) {
 func parseEndpoints(raw string) ([]Endpoint, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, fmt.Errorf("GSLB_REGION_ENDPOINTS is required")
+		return nil, fmt.Errorf("DNS_FAILOVER_REGION_ENDPOINTS is required")
 	}
 
 	parts := strings.Split(raw, ",")
@@ -132,7 +132,7 @@ func parseEndpoints(raw string) ([]Endpoint, error) {
 func parseDNSTargets(raw string) ([]DNSTarget, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, fmt.Errorf("GSLB_REGION_DNS_TARGETS is required")
+		return nil, fmt.Errorf("DNS_FAILOVER_REGION_DNS_TARGETS is required")
 	}
 
 	parts := strings.Split(raw, ",")

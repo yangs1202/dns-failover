@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yangs1202/dns-gslb-failover/internal/config"
+	"github.com/yangs1202/dns-failover/internal/config"
 )
 
 func TestHTTPCheckerTreats200AsHealthy(t *testing.T) {

@@ -1,8 +1,23 @@
-# dns-gslb-failover
+# dns-failover
 
-Simple DNS-based GSLB failover agent for three-region deployments.
+[![CI](https://github.com/yangs1202/dns-failover/actions/workflows/ci.yml/badge.svg)](https://github.com/yangs1202/dns-failover/actions/workflows/ci.yml)
+[![Coverage](coverage/coverage.svg)](https://github.com/yangs1202/dns-failover/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/yangs1202/dns-failover)](go.mod)
+[![License](https://img.shields.io/github/license/yangs1202/dns-failover)](LICENSE)
 
-The intended design is:
+Minimal DNS failover agent for three-region deployments.
+
+`dns-failover` monitors regional HTTP health endpoints, reaches a quorum-backed failover decision through `etcd`, and updates a Cloudflare CNAME record so traffic moves to the selected regional VIP.
+
+## Features
+
+- HTTP health checks where only `200 OK` is healthy.
+- CNAME-based failover instead of changing regional `A` records.
+- ENV-based configuration for public-repo-safe deployment.
+- Planned `etcd` quorum and leader election to avoid split brain.
+- Planned Cloudflare DNS update client.
+
+## Design
 
 1. Each region runs the same agent.
 2. Agents perform HTTP health checks against every regional endpoint.
@@ -44,10 +59,10 @@ This repository is public and must not contain private infrastructure details.
 ## Environment
 
 ```sh
-GSLB_REGION_ID=region-a
-GSLB_REGION_ENDPOINTS=region-a=https://example-a.invalid/healthz,region-b=https://example-b.invalid/healthz,region-c=https://example-c.invalid/healthz
-GSLB_REGION_DNS_TARGETS=region-a=region-a.example.invalid,region-b=region-b.example.invalid,region-c=region-c.example.invalid
-GSLB_HEALTH_TIMEOUT=2s
+DNS_FAILOVER_REGION_ID=region-a
+DNS_FAILOVER_REGION_ENDPOINTS=region-a=https://example-a.invalid/healthz,region-b=https://example-b.invalid/healthz,region-c=https://example-c.invalid/healthz
+DNS_FAILOVER_REGION_DNS_TARGETS=region-a=region-a.example.invalid,region-b=region-b.example.invalid,region-c=region-c.example.invalid
+DNS_FAILOVER_HEALTH_TIMEOUT=2s
 CLOUDFLARE_API_TOKEN=...
 CLOUDFLARE_ZONE_ID=...
 CLOUDFLARE_RECORD_ID=...
@@ -69,3 +84,13 @@ Planned next steps:
 - `etcd` lease-based leader election
 - quorum-gated failover decision
 - Cloudflare DNS update client
+
+## Development
+
+```sh
+go test ./...
+go test ./... -coverprofile=coverage/coverage.out
+go build ./cmd/dns-failover
+```
+
+CI runs formatting checks, race-enabled tests, and coverage reporting on every push and pull request.

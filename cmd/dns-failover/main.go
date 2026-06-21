@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/yangs1202/dns-gslb-failover/internal/config"
-	"github.com/yangs1202/dns-gslb-failover/internal/health"
+	"github.com/yangs1202/dns-failover/internal/config"
+	"github.com/yangs1202/dns-failover/internal/health"
 )
 
 func main() {

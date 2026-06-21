@@ -4,6 +4,7 @@
 /bin/
 /dist/
 *.test
+coverage/*.out
 
 # Runtime/local config
 .env
