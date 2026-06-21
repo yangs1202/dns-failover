@@ -18,6 +18,7 @@ type Config struct {
 	CheckInterval  time.Duration
 	Etcd           EtcdConfig
 	DNSProvider    DNSProviderConfig
+	Notifications  NotificationConfig
 }
 
 type Endpoint struct {
@@ -44,6 +45,10 @@ type EtcdConfig struct {
 	KeyPrefix string
 }
 
+type NotificationConfig struct {
+	SlackWebhookURL string
+}
+
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
 		RegionID:      strings.TrimSpace(os.Getenv("DNS_FAILOVER_REGION_ID")),
@@ -59,6 +64,9 @@ func LoadFromEnv() (Config, error) {
 			RecordID:   os.Getenv("DNS_FAILOVER_DNS_RECORD_ID"),
 			RecordName: os.Getenv("DNS_FAILOVER_DNS_RECORD_NAME"),
 			RecordType: strings.TrimSpace(os.Getenv("DNS_FAILOVER_DNS_RECORD_TYPE")),
+		},
+		Notifications: NotificationConfig{
+			SlackWebhookURL: strings.TrimSpace(os.Getenv("DNS_FAILOVER_SLACK_WEBHOOK_URL")),
 		},
 	}
 	if cfg.DNSProvider.RecordType == "" {

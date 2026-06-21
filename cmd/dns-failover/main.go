@@ -14,6 +14,7 @@ import (
 	"github.com/yangs1202/dns-failover/internal/dnsprovider"
 	"github.com/yangs1202/dns-failover/internal/failover"
 	"github.com/yangs1202/dns-failover/internal/health"
+	"github.com/yangs1202/dns-failover/internal/notify"
 )
 
 func main() {
@@ -32,6 +33,11 @@ func main() {
 	provider, err := newDNSProvider(cfg)
 	if err != nil {
 		logger.Error("create dns provider failed", "error", err)
+		os.Exit(1)
+	}
+	notifier, err := newNotifier(cfg)
+	if err != nil {
+		logger.Error("create notifier failed", "error", err)
 		os.Exit(1)
 	}
 
@@ -58,9 +64,10 @@ func main() {
 		"etcd_endpoints", len(cfg.Etcd.Endpoints),
 		"etcd_key_prefix", cfg.Etcd.KeyPrefix,
 		"dns_provider", cfg.DNSProvider.Provider,
+		"slack_notifications", cfg.Notifications.SlackWebhookURL != "",
 	)
 
-	runFailoverCycle(ctx, logger, checker, store, provider, cfg)
+	runFailoverCycle(ctx, logger, checker, store, provider, notifier, cfg)
 
 	ticker := time.NewTicker(cfg.CheckInterval)
 	defer ticker.Stop()
@@ -71,12 +78,12 @@ func main() {
 			logger.Info("agent stopped", "region", cfg.RegionID)
 			return
 		case <-ticker.C:
-			runFailoverCycle(ctx, logger, checker, store, provider, cfg)
+			runFailoverCycle(ctx, logger, checker, store, provider, notifier, cfg)
 		}
 	}
 }
 
-func runFailoverCycle(ctx context.Context, logger *slog.Logger, checker health.HTTPChecker, store failover.EtcdStore, provider dnsprovider.Provider, cfg config.Config) {
+func runFailoverCycle(ctx context.Context, logger *slog.Logger, checker health.HTTPChecker, store failover.EtcdStore, provider dnsprovider.Provider, notifier notify.Notifier, cfg config.Config) {
 	observations := runHealthCheckCycle(ctx, logger, checker, cfg)
 	for _, observation := range observations {
 		if err := store.PutObservation(ctx, observation); err != nil {
@@ -133,10 +140,33 @@ func runFailoverCycle(ctx context.Context, logger *slog.Logger, checker health.H
 			"active_region", decision.RegionID,
 			"target_name", decision.TargetName,
 		)
+		if err := notifier.Notify(leaderCtx, notify.Event{
+			Title: "dns-failover target updated",
+			Fields: map[string]string{
+				"leader_region": cfg.RegionID,
+				"active_region": decision.RegionID,
+				"target_name":   decision.TargetName,
+				"record_name":   cfg.DNSProvider.RecordName,
+			},
+		}); err != nil {
+			logger.Error("send failover notification failed", "error", err)
+		}
 		return nil
 	})
 	if err != nil {
 		logger.Error("failover decision failed", "leader", leader, "error", err)
+		if leader {
+			if notifyErr := notifier.Notify(ctx, notify.Event{
+				Title: "dns-failover decision failed",
+				Fields: map[string]string{
+					"leader_region": cfg.RegionID,
+					"record_name":   cfg.DNSProvider.RecordName,
+					"error":         err.Error(),
+				},
+			}); notifyErr != nil {
+				logger.Error("send failover failure notification failed", "error", notifyErr)
+			}
+		}
 		return
 	}
 	if !leader {
@@ -166,6 +196,14 @@ func runHealthCheckCycle(ctx context.Context, logger *slog.Logger, checker healt
 
 	logger.Info("health check cycle completed", "observer_region", cfg.RegionID)
 	return observations
+}
+
+func newNotifier(cfg config.Config) (notify.Notifier, error) {
+	if cfg.Notifications.SlackWebhookURL == "" {
+		return notify.NoopNotifier{}, nil
+	}
+
+	return notify.NewSlackNotifier(cfg.Notifications.SlackWebhookURL)
 }
 
 func newDNSProvider(cfg config.Config) (dnsprovider.Provider, error) {

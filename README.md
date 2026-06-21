@@ -91,6 +91,7 @@ DNS_FAILOVER_DNS_ZONE_ID=...
 DNS_FAILOVER_DNS_RECORD_ID=...
 DNS_FAILOVER_DNS_RECORD_NAME=vip.example.invalid
 DNS_FAILOVER_DNS_RECORD_TYPE=CNAME
+DNS_FAILOVER_SLACK_WEBHOOK_URL=...
 ```
 
 ## Current status
@@ -105,6 +106,7 @@ Current status:
 - `etcd` lock-based leader coordination
 - quorum-gated failover decision from current observations
 - Cloudflare CNAME update client
+- optional Slack webhook notifications for target updates and decision failures
 
 ## Development
 
