@@ -205,6 +205,31 @@ func TestLoadFromEnvDefaultsDNSRecordType(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvSupportsProviderSpecificDNSCredentials(t *testing.T) {
+	t.Setenv("DNS_FAILOVER_REGION_ID", "region-a")
+	t.Setenv("DNS_FAILOVER_REGION_ENDPOINTS", "region-a=https://region-a.example.invalid/healthz")
+	t.Setenv("DNS_FAILOVER_REGION_DNS_TARGETS", "region-a=region-a.example.invalid")
+	t.Setenv("DNS_FAILOVER_REGION_PRIORITY", "region-a")
+	t.Setenv("DNS_FAILOVER_DNS_PROVIDER", "route53")
+	t.Setenv("DNS_FAILOVER_DNS_ACCOUNT_ID", "account-1")
+	t.Setenv("AWS_ACCESS_KEY_ID", "aws-access-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "aws-secret-key")
+
+	cfg, err := LoadFromEnv()
+	if err != nil {
+		t.Fatalf("LoadFromEnv returned error: %v", err)
+	}
+	if cfg.DNSProvider.AccountID != "account-1" {
+		t.Fatalf("expected provider account id, got %q", cfg.DNSProvider.AccountID)
+	}
+	if cfg.DNSProvider.AccessKeyID != "aws-access-key" {
+		t.Fatalf("expected AWS access key fallback, got %q", cfg.DNSProvider.AccessKeyID)
+	}
+	if cfg.DNSProvider.SecretAccessKey != "aws-secret-key" {
+		t.Fatalf("expected AWS secret key fallback, got %q", cfg.DNSProvider.SecretAccessKey)
+	}
+}
+
 func TestLoadFromEnvRejectsInvalidDNSTTL(t *testing.T) {
 	t.Setenv("DNS_FAILOVER_REGION_ID", "region-a")
 	t.Setenv("DNS_FAILOVER_REGION_ENDPOINTS", "region-a=https://region-a.example.invalid/healthz")

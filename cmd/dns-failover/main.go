@@ -211,15 +211,27 @@ func newDNSProvider(cfg config.Config) (dnsprovider.Provider, error) {
 	if err := registry.Register("cloudflare", dnsprovider.NewCloudflareProvider); err != nil {
 		return nil, err
 	}
+	if err := registry.Register("digitalocean", dnsprovider.NewDigitalOceanProvider); err != nil {
+		return nil, err
+	}
+	if err := registry.Register("dnsimple", dnsprovider.NewDNSimpleProvider); err != nil {
+		return nil, err
+	}
+	if err := registry.Register("route53", dnsprovider.NewRoute53Provider); err != nil {
+		return nil, err
+	}
 
 	return registry.NewProvider(dnsprovider.Config{
-		Name:       cfg.DNSProvider.Provider,
-		APIToken:   cfg.DNSProvider.APIToken,
-		ZoneID:     cfg.DNSProvider.ZoneID,
-		RecordID:   cfg.DNSProvider.RecordID,
-		RecordName: cfg.DNSProvider.RecordName,
-		RecordType: cfg.DNSProvider.RecordType,
-		TTL:        cfg.DNSProvider.TTL,
+		Name:            cfg.DNSProvider.Provider,
+		APIToken:        cfg.DNSProvider.APIToken,
+		AccountID:       cfg.DNSProvider.AccountID,
+		AccessKeyID:     cfg.DNSProvider.AccessKeyID,
+		SecretAccessKey: cfg.DNSProvider.SecretAccessKey,
+		ZoneID:          cfg.DNSProvider.ZoneID,
+		RecordID:        cfg.DNSProvider.RecordID,
+		RecordName:      cfg.DNSProvider.RecordName,
+		RecordType:      cfg.DNSProvider.RecordType,
+		TTL:             cfg.DNSProvider.TTL,
 	})
 }
 

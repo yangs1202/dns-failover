@@ -17,13 +17,16 @@ type CNAMEChange struct {
 }
 
 type Config struct {
-	Name       string
-	APIToken   string
-	ZoneID     string
-	RecordID   string
-	RecordName string
-	RecordType string
-	TTL        int
+	Name            string
+	APIToken        string
+	AccountID       string
+	AccessKeyID     string
+	SecretAccessKey string
+	ZoneID          string
+	RecordID        string
+	RecordName      string
+	RecordType      string
+	TTL             int
 }
 
 type Factory func(Config) (Provider, error)

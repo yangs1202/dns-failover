@@ -14,11 +14,11 @@ Minimal DNS failover agent for three-region deployments.
 - HTTP health checks where only `200 OK` is healthy.
 - CNAME-based failover instead of changing regional `A` records.
 - ENV-based configuration for public-repo-safe deployment.
-- DNS provider abstraction so Cloudflare or another provider can be plugged in.
+- DNS provider abstraction with Cloudflare, DigitalOcean, DNSimple, and Route53 implementations.
 - External `etcd` endpoint configuration for sharing an existing quorum cluster.
 - Long-running agent process suitable for container deployments.
 - `etcd` lock-based leader coordination to avoid split brain.
-- Cloudflare DNS provider client.
+- DNS provider clients for Cloudflare, DigitalOcean, DNSimple, and AWS Route53.
 
 ## Design
 
@@ -63,6 +63,23 @@ type Provider interface {
 ```
 
 Provider selection is configuration-driven through `DNS_FAILOVER_DNS_PROVIDER`. Provider-specific clients should be registered behind the provider registry instead of being called directly from failover logic.
+
+Supported providers:
+
+| Provider | `DNS_FAILOVER_DNS_PROVIDER` | Required provider configuration |
+| --- | --- | --- |
+| Cloudflare | `cloudflare` | `DNS_FAILOVER_DNS_API_TOKEN`, `DNS_FAILOVER_DNS_ZONE_ID`, `DNS_FAILOVER_DNS_RECORD_ID`, `DNS_FAILOVER_DNS_RECORD_NAME` |
+| DigitalOcean | `digitalocean` | `DNS_FAILOVER_DNS_API_TOKEN`, `DNS_FAILOVER_DNS_ZONE_ID`, `DNS_FAILOVER_DNS_RECORD_ID`, `DNS_FAILOVER_DNS_RECORD_NAME` |
+| DNSimple | `dnsimple` | `DNS_FAILOVER_DNS_API_TOKEN`, `DNS_FAILOVER_DNS_ACCOUNT_ID`, `DNS_FAILOVER_DNS_ZONE_ID`, `DNS_FAILOVER_DNS_RECORD_ID`, `DNS_FAILOVER_DNS_RECORD_NAME` |
+| Route53 | `route53` | `DNS_FAILOVER_DNS_ZONE_ID`, `DNS_FAILOVER_DNS_RECORD_NAME`, AWS credentials |
+
+Provider notes:
+
+- All provider implementations update one managed `CNAME` record.
+- `DNS_FAILOVER_DNS_TTL` controls the requested record TTL when the provider supports it.
+- DigitalOcean uses `DNS_FAILOVER_DNS_ZONE_ID` as the domain name, for example `example.invalid`.
+- DNSimple uses `DNS_FAILOVER_DNS_ACCOUNT_ID` for the account identifier and `DNS_FAILOVER_DNS_ZONE_ID` as the zone name.
+- Route53 uses `DNS_FAILOVER_DNS_ZONE_ID` as the hosted zone ID. Credentials come from the standard AWS credential chain, or from `DNS_FAILOVER_DNS_ACCESS_KEY_ID` and `DNS_FAILOVER_DNS_SECRET_ACCESS_KEY`.
 
 ## Cloudflare POC benchmark
 
@@ -134,6 +151,9 @@ DNS_FAILOVER_ETCD_ENDPOINTS=10.0.0.1:2379,10.0.0.2:2379,10.0.0.3:2379
 DNS_FAILOVER_ETCD_KEY_PREFIX=/dns-failover/
 DNS_FAILOVER_DNS_PROVIDER=example-provider
 DNS_FAILOVER_DNS_API_TOKEN=...
+DNS_FAILOVER_DNS_ACCOUNT_ID=...
+DNS_FAILOVER_DNS_ACCESS_KEY_ID=...
+DNS_FAILOVER_DNS_SECRET_ACCESS_KEY=...
 DNS_FAILOVER_DNS_ZONE_ID=...
 DNS_FAILOVER_DNS_RECORD_ID=...
 DNS_FAILOVER_DNS_RECORD_NAME=vip.example.invalid
@@ -153,7 +173,7 @@ Current status:
 - `etcd` TTL-backed observation storage
 - `etcd` lock-based leader coordination
 - quorum-gated failover decision from current observations
-- Cloudflare CNAME update client
+- Cloudflare, DigitalOcean, DNSimple, and Route53 CNAME update clients
 - optional Slack webhook notifications for target updates and decision failures
 
 ## Development

@@ -33,13 +33,16 @@ type DNSTarget struct {
 }
 
 type DNSProviderConfig struct {
-	Provider   string
-	APIToken   string
-	ZoneID     string
-	RecordID   string
-	RecordName string
-	RecordType string
-	TTL        int
+	Provider        string
+	APIToken        string
+	AccountID       string
+	AccessKeyID     string
+	SecretAccessKey string
+	ZoneID          string
+	RecordID        string
+	RecordName      string
+	RecordType      string
+	TTL             int
 }
 
 type EtcdConfig struct {
@@ -60,13 +63,16 @@ func LoadFromEnv() (Config, error) {
 			KeyPrefix: "/dns-failover/",
 		},
 		DNSProvider: DNSProviderConfig{
-			Provider:   strings.TrimSpace(os.Getenv("DNS_FAILOVER_DNS_PROVIDER")),
-			APIToken:   os.Getenv("DNS_FAILOVER_DNS_API_TOKEN"),
-			ZoneID:     os.Getenv("DNS_FAILOVER_DNS_ZONE_ID"),
-			RecordID:   os.Getenv("DNS_FAILOVER_DNS_RECORD_ID"),
-			RecordName: os.Getenv("DNS_FAILOVER_DNS_RECORD_NAME"),
-			RecordType: strings.TrimSpace(os.Getenv("DNS_FAILOVER_DNS_RECORD_TYPE")),
-			TTL:        60,
+			Provider:        strings.TrimSpace(os.Getenv("DNS_FAILOVER_DNS_PROVIDER")),
+			APIToken:        os.Getenv("DNS_FAILOVER_DNS_API_TOKEN"),
+			AccountID:       strings.TrimSpace(os.Getenv("DNS_FAILOVER_DNS_ACCOUNT_ID")),
+			AccessKeyID:     firstNonEmpty(os.Getenv("DNS_FAILOVER_DNS_ACCESS_KEY_ID"), os.Getenv("AWS_ACCESS_KEY_ID")),
+			SecretAccessKey: firstNonEmpty(os.Getenv("DNS_FAILOVER_DNS_SECRET_ACCESS_KEY"), os.Getenv("AWS_SECRET_ACCESS_KEY")),
+			ZoneID:          os.Getenv("DNS_FAILOVER_DNS_ZONE_ID"),
+			RecordID:        os.Getenv("DNS_FAILOVER_DNS_RECORD_ID"),
+			RecordName:      os.Getenv("DNS_FAILOVER_DNS_RECORD_NAME"),
+			RecordType:      strings.TrimSpace(os.Getenv("DNS_FAILOVER_DNS_RECORD_TYPE")),
+			TTL:             60,
 		},
 		Notifications: NotificationConfig{
 			SlackWebhookURL: strings.TrimSpace(os.Getenv("DNS_FAILOVER_SLACK_WEBHOOK_URL")),
@@ -162,6 +168,15 @@ func LoadFromEnv() (Config, error) {
 	cfg.ServiceRecords = serviceRecords
 
 	return cfg, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func parseEndpoints(raw string) ([]Endpoint, error) {
