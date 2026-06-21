@@ -64,6 +64,53 @@ type Provider interface {
 
 Provider selection is configuration-driven through `DNS_FAILOVER_DNS_PROVIDER`. Provider-specific clients should be registered behind the provider registry instead of being called directly from failover logic.
 
+## Cloudflare POC benchmark
+
+The following benchmark summarizes an anonymized Cloudflare DNS POC. Real domains, region names, account IDs, and public IP addresses are intentionally omitted.
+
+### Setup
+
+```text
+region-a.example.invalid -> pre-registered regional endpoint A record
+region-b.example.invalid -> pre-registered regional endpoint A record
+
+vip-primary.example.invalid
+└── CNAME region-a.example.invalid
+
+app.example.invalid
+└── CNAME vip-primary.example.invalid
+```
+
+The POC used:
+
+- 3 agents across 3 regions
+- shared external `etcd` quorum
+- HTTP health check interval: `10s`
+- HTTP health timeout: `2s`
+- Cloudflare CNAME updates
+- Cloudflare DNS-only VIP records
+- proxied Cloudflare service records for application traffic
+
+### Observed timings
+
+| Scenario | Result |
+| --- | --- |
+| Region failure to Cloudflare CNAME update | about `56-57s` |
+| Region failure to recursive DNS observation | about `84s` in the first run |
+| Switchback after primary region recovery | observed successfully; Cloudflare record was already updated before the DNS polling loop started |
+| Cloudflare DNS-only VIP TTL setting | `ttl=1` through the API, which means Cloudflare Auto TTL |
+| Authoritative DNS TTL observed for DNS-only CNAME | `300s` |
+| Proxied service record during switchback | `0s` measured application downtime |
+| Recursive resolver convergence during switchback | mixed old/new CNAME answers were observed while both targets were healthy |
+
+### Notes
+
+- Cloudflare proxied application records return Cloudflare edge A records publicly, not the internal CNAME chain.
+- DNS-only VIP records are still useful behind proxied service records because Cloudflare resolves the target internally.
+- Recursive resolvers may temporarily disagree during CNAME changes. The POC observed this as mixed `region-a` / `region-b` answers while authoritative DNS already had the new value.
+- Measured user-visible downtime can be lower than DNS convergence time when both the old and new regional targets are healthy.
+- Failover speed is primarily bounded by health-check interval, observation TTL/quorum behavior, leader lock acquisition, Cloudflare API update time, and resolver cache behavior.
+
 ## Security posture
 
 This repository is public and must not contain private infrastructure details.
