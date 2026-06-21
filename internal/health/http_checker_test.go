@@ -48,6 +48,35 @@ func TestHTTPCheckerTreatsNon200AsUnhealthy(t *testing.T) {
 	}
 }
 
+func TestHTTPCheckerDoesNotFollowRedirects(t *testing.T) {
+	t.Parallel()
+
+	redirectTargetCalled := false
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		redirectTargetCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirectTarget.Close()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, redirectTarget.URL, http.StatusFound)
+	}))
+	defer server.Close()
+
+	checker := NewHTTPChecker(time.Second)
+	result := checker.Check(context.Background(), config.Endpoint{RegionID: "region-a", URL: server.URL})
+
+	if result.Healthy {
+		t.Fatal("expected redirect to be unhealthy")
+	}
+	if result.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302 status without following redirect, got %d", result.StatusCode)
+	}
+	if redirectTargetCalled {
+		t.Fatal("expected redirect target not to be called")
+	}
+}
+
 func TestHTTPCheckerTreatsRequestErrorAsUnhealthy(t *testing.T) {
 	t.Parallel()
 
